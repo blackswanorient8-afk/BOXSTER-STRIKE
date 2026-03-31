@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="UTF-8">
+    <title>Untitled</title>
+    
+
+  </head>
+    
+  <body>
+  <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Challenging Dots and Boxes</title>
+    <style>
+        :root {
+            --board-size: min(90vw, 600px);
+            --player-color: #3498db;
+            --ai-color: #e74c3c;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #1a1a1a;
+            color: #ecf0f1;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        #score-board {
+            display: flex;
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+
+        #player-score {
+            color: var(--player-color);
+            margin-right: 20px;
+        }
+
+        #ai-score {
+            color: var(--ai-color);
+            margin-left: 20px;
+        }
+
+        #game-container {
+            position: relative;
+            width: var(--board-size);
+            height: var(--board-size);
+        }
+
+        #game-board {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        .dot {
+            position: absolute;
+            background-color: #ecf0f1;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1; 
+            pointer-events: none; /* Makes dots non-interactive so clicks pass through */
+        }
+
+        .line {
+            position: absolute;
+            background-color: rgba(127, 140, 141, 0.2);
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .line.horizontal {
+            transform: translateY(-50%);
+        }
+
+        .line.vertical {
+            transform: translateX(-50%);
+        }
+
+        .line:not(.claimed):hover {
+            background-color: #7f8c8d;
+        }
+        
+        .line.claimed.player { background-color: var(--player-color); }
+        .line.claimed.ai { background-color: var(--ai-color); }
+
+        .box {
+            position: absolute;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            transition: background-color 0.5s;
+            pointer-events: none; /* Boxes shouldn't be clickable either */
+        }
+        
+        #status {
+            margin-top: 20px;
+            font-size: 1.5em;
+            height: 30px;
+        }
+
+        button {
+            margin-top: 10px;
+            padding: 10px 25px;
+            font-size: 1em;
+            border: none;
+            border-radius: 5px;
+            background-color: #3498db;
+            color: white;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Dots and Boxes</h1>
+    <div id="score-board">
+        <div id="player-score">You: 0</div>
+        <div id="ai-score">AI: 0</div>
+    </div>
+    <div id="game-container">
+        <div id="game-board"></div>
+    </div>
+    <div id="status">Your Turn</div>
+    <button id="restart-button">Restart</button>
+
+    <script>
+        const GRID_SIZE = 10;
+        const boardElement = document.getElementById('game-board');
+        const statusElement = document.getElementById('status');
+        const restartButton = document.getElementById('restart-button');
+        const playerScoreEl = document.getElementById('player-score');
+        const aiScoreEl = document.getElementById('ai-score');
+
+        let horizontalLines, verticalLines, boxes;
+        let currentPlayer; // 'player' or 'ai'
+        let scores;
+
+        function setupBoard() {
+            boardElement.innerHTML = '';
+            
+            // FIXED: Use precise pixel calculations instead of percentages
+            const boardSize = boardElement.clientWidth;
+            const dotSize = 12;
+            const lineThickness = 6;
+            const cellSize = (boardSize - dotSize) / (GRID_SIZE - 1);
+
+            // Create dots
+            for (let row = 0; row < GRID_SIZE; row++) {
+                for (let col = 0; col < GRID_SIZE; col++) {
+                    const dot = document.createElement('div');
+                    dot.classList.add('dot');
+                    dot.style.width = `${dotSize}px`;
+                    dot.style.height = `${dotSize}px`;
+                    dot.style.top = `${row * cellSize + dotSize / 2}px`;
+                    dot.style.left = `${col * cellSize + dotSize / 2}px`;
+                    boardElement.appendChild(dot);
+                }
+            }
+
+            horizontalLines = Array(GRID_SIZE).fill(0).map(() => Array(GRID_SIZE - 1).fill(false));
+            verticalLines = Array(GRID_SIZE - 1).fill(0).map(() => Array(GRID_SIZE).fill(false));
+            
+            // Horizontal lines
+            for (let row = 0; row < GRID_SIZE; row++) {
+                for (let col = 0; col < GRID_SIZE - 1; col++) {
+                    const line = document.createElement('div');
+                    line.classList.add('line', 'horizontal');
+                    line.style.width = `${cellSize}px`;
+                    line.style.height = `${lineThickness}px`;
+                    line.style.top = `${row * cellSize + dotSize / 2}px`;
+                    line.style.left = `${col * cellSize + dotSize / 2}px`;
+                    line.dataset.row = row;
+                    line.dataset.col = col;
+                    line.dataset.type = 'h';
+                    line.addEventListener('click', handleLineClick);
+                    boardElement.appendChild(line);
+                }
+            }
+
+            // Vertical lines
+            for (let row = 0; row < GRID_SIZE - 1; row++) {
+                for (let col = 0; col < GRID_SIZE; col++) {
+                    const line = document.createElement('div');
+                    line.classList.add('line', 'vertical');
+                    line.style.width = `${lineThickness}px`;
+                    line.style.height = `${cellSize}px`;
+                    line.style.top = `${row * cellSize + dotSize / 2}px`;
+                    line.style.left = `${col * cellSize + dotSize / 2}px`;
+                    line.dataset.row = row;
+                    line.dataset.col = col;
+                    line.dataset.type = 'v';
+                    line.addEventListener('click', handleLineClick);
+                    boardElement.appendChild(line);
+                }
+            }
+            
+            boxes = Array(GRID_SIZE - 1).fill(0).map(() => Array(GRID_SIZE - 1).fill(null));
+            for (let row = 0; row < GRID_SIZE - 1; row++) {
+                for (let col = 0; col < GRID_SIZE - 1; col++) {
+                    const box = document.createElement('div');
+                    box.classList.add('box');
+                    box.style.width = `${cellSize}px`;
+                    box.style.height = `${cellSize}px`;
+                    box.style.top = `${row * cellSize + dotSize / 2}px`;
+                    box.style.left = `${col * cellSize + dotSize / 2}px`;
+                    box.style.fontSize = `${cellSize * 0.5}px`;
+                    boardElement.appendChild(box);
+                }
+            }
+        }
+
+        function startGame() {
+            setupBoard();
+            currentPlayer = 'player';
+            scores = { player: 0, ai: 0 };
+            updateScores();
+            statusElement.textContent = 'Your Turn';
+        }
+
+        function handleLineClick(e) {
+            if (currentPlayer !== 'player') return;
+            const line = e.target;
+            if (line.classList.contains('claimed')) return;
+            
+            const { row, col, type } = line.dataset;
+            playMove(parseInt(row), parseInt(col), type, 'player', line);
+        }
+
+        function playMove(row, col, type, player, lineElement) {
+            if (lineElement.classList.contains('claimed')) return;
+            lineElement.classList.add('claimed', player);
+            if (type === 'h') horizontalLines[row][col] = true;
+            else verticalLines[row][col] = true;
+
+            const newBoxesCompleted = checkNewBoxes(player);
+            
+            if (newBoxesCompleted > 0) {
+                scores[player] += newBoxesCompleted;
+                updateScores();
+            }
+
+            if (isGameOver()) {
+                endGame();
+            } else {
+                switchPlayer();
+            }
+        }
+        
+        function switchPlayer() {
+            currentPlayer = (currentPlayer === 'player') ? 'ai' : 'player';
+            statusElement.textContent = (currentPlayer === 'player') ? 'Your Turn' : "AI's Turn";
+            if (currentPlayer === 'ai') {
+                setTimeout(aiTurn, 500);
+            }
+        }
+
+        function checkNewBoxes(player) {
+            let boxesCompleted = 0;
+            for (let r = 0; r < GRID_SIZE - 1; r++) {
+                for (let c = 0; c < GRID_SIZE - 1; c++) {
+                    if (boxes[r][c] === null && 
+                        horizontalLines[r][c] && 
+                        horizontalLines[r + 1][c] && 
+                        verticalLines[r][c] && 
+                        verticalLines[r][c + 1]) {
+                        
+                        boxes[r][c] = player;
+                        boxesCompleted++;
+                        const boxIndex = r * (GRID_SIZE - 1) + c;
+                        const boxElement = document.querySelectorAll('.box')[boxIndex];
+                        boxElement.style.backgroundColor = (player === 'player') ? 'rgba(52, 152, 219, 0.5)' : 'rgba(231, 76, 60, 0.5)';
+                        boxElement.textContent = player.toUpperCase();
+                    }
+                }
+            }
+            return boxesCompleted;
+        }
+
+        function updateScores() {
+            playerScoreEl.textContent = `You: ${scores.player}`;
+            aiScoreEl.textContent = `AI: ${scores.ai}`;
+        }
+
+        function isGameOver() {
+            return scores.player + scores.ai === (GRID_SIZE - 1) * (GRID_SIZE - 1);
+        }
+
+        function endGame() {
+            let message;
+            if (scores.player > scores.ai) message = "You Win!";
+            else if (scores.ai > scores.player) message = "AI Wins!";
+            else message = "It's a Draw!";
+            statusElement.textContent = `Game Over! ${message}`;
+        }
+
+        // --- AI Logic ---
+        function countLinesForBox(r, c) {
+            if (r < 0 || r >= GRID_SIZE - 1 || c < 0 || c >= GRID_SIZE - 1) return 0;
+            let count = 0;
+            if (horizontalLines[r][c]) count++;
+            if (horizontalLines[r + 1][c]) count++;
+            if (verticalLines[r][c]) count++;
+            if (verticalLines[r][c + 1]) count++;
+            return count;
+        }
+
+        function aiTurn() {
+            if (isGameOver()) return;
+
+            // Strategy 1: Find a move that completes a box.
+            for (let r = 0; r < GRID_SIZE; r++) { // Horizontal lines
+                for (let c = 0; c < GRID_SIZE - 1; c++) {
+                    if (!horizontalLines[r][c]) {
+                        if ((r > 0 && countLinesForBox(r - 1, c) === 3) || (r < GRID_SIZE - 1 && countLinesForBox(r, c) === 3)) {
+                            const line = document.querySelector(`.line.horizontal[data-row='${r}'][data-col='${c}']`);
+                            playMove(r, c, 'h', 'ai', line);
+                            return;
+                        }
+                    }
+                }
+            }
+            for (let r = 0; r < GRID_SIZE - 1; r++) { // Vertical lines
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    if (!verticalLines[r][c]) {
+                        if ((c > 0 && countLinesForBox(r, c - 1) === 3) || (c < GRID_SIZE - 1 && countLinesForBox(r, c) === 3)) {
+                            const line = document.querySelector(`.line.vertical[data-row='${r}'][data-col='${c}']`);
+                            playMove(r, c, 'v', 'ai', line);
+                            return;
+                        }
+                    }
+                }
+            }
+
+            // Strategy 2: Find a "safe" move that doesn't set up the player.
+            const safeMoves = [];
+            const allMoves = [];
+            for (let r = 0; r < GRID_SIZE; r++) {
+                for (let c = 0; c < GRID_SIZE - 1; c++) {
+                    if (!horizontalLines[r][c]) {
+                        allMoves.push({ r, c, type: 'h' });
+                        let isSafe = true;
+                        if (r > 0 && countLinesForBox(r - 1, c) === 2) isSafe = false;
+                        if (r < GRID_SIZE - 1 && countLinesForBox(r, c) === 2) isSafe = false;
+                        if (isSafe) safeMoves.push({ r, c, type: 'h' });
+                    }
+                }
+            }
+            for (let r = 0; r < GRID_SIZE - 1; r++) {
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    if (!verticalLines[r][c]) {
+                        allMoves.push({ r, c, type: 'v' });
+                        let isSafe = true;
+                        if (c > 0 && countLinesForBox(r, c - 1) === 2) isSafe = false;
+                        if (c < GRID_SIZE - 1 && countLinesForBox(r, c) === 2) isSafe = false;
+                        if (isSafe) safeMoves.push({ r, c, type: 'v' });
+                    }
+                }
+            }
+            
+            let move;
+            if (safeMoves.length > 0) {
+                move = safeMoves[Math.floor(Math.random() * safeMoves.length)];
+            } else if (allMoves.length > 0) { // Strategy 3: No safe moves, sacrifice one.
+                move = allMoves[Math.floor(Math.random() * allMoves.length)];
+            } else {
+                return; // No moves left
+            }
+            
+            const typeClass = move.type === 'h' ? 'horizontal' : 'vertical';
+            const line = document.querySelector(`.line.${typeClass}[data-row='${move.r}'][data-col='${move.c}']`);
+            playMove(move.r, move.c, move.type, 'ai', line);
+        }
+
+        restartButton.addEventListener('click', startGame);
+        
+        // Start the game once the initial layout is calculated
+        window.addEventListener('DOMContentLoaded', startGame);
+        window.addEventListener('resize', startGame); // Redraw board on resize
+    </script>
+</body>
+</html>
+    
+  </body>
+  
+</html>
